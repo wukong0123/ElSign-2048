@@ -6,6 +6,9 @@ Phan thong diep van ban cho ben gui/ben nhan duoc so hoa theo bang chu cai `A-Z`
 ## Chay nhanh
 
 ```powershell
+python main.py
+python main.py web
+python main.py gui
 python main.py genkey -o mykey
 python main.py encrypt --key mykey.public.json --message "Xin chao" --outfile cipher.json
 python main.py decrypt --key mykey.private.json --infile cipher.json
@@ -18,6 +21,8 @@ Thong diep `"Xin chao"` se duoc chuan hoa thanh `XINCHAO` truoc khi ma hoa.
 ## Giai thich file
 
 - `main.py`: ung dung CLI va menu tuong tac.
+- `web_app.py`: backend nho de phuc vu frontend web.
+- `web/`: giao dien frontend HTML/CSS/JavaScript.
 - `*.public.json`: khoa cong khai.
 - `*.private.json`: khoa bi mat.
 - `cipher.json`: ban ma duoi dang JSON.
@@ -30,3 +35,7 @@ Thong diep `"Xin chao"` se duoc chuan hoa thanh `XINCHAO` truoc khi ma hoa.
 - Ma hoa file van duoi dang chia khoi bytes, moi khoi duoc ma hoa rieng.
 - Khi giai ma ma khong truyen `--outfile`, du lieu nhi phan se duoc in ra man hinh bang Base64. Them `--text` neu plaintext la UTF-8.
 - Menu mac dinh da tach vai tro `Ben gui` va `Ben nhan` de thao tac nhanh voi thong diep van ban.
+- Co the mo GUI desktop bang `python main.py gui`. Giao dien nay tap trung vao tao khoa, ma hoa va giai ma thong diep giua ben gui va ben nhan.
+- Co the mo frontend web bang `python main.py web`, sau do truy cap `http://127.0.0.1:8000`.
+- Khi chay `python main.py` khong kem tham so, app se tu dong bat web server va mo frontend trong trinh duyet.
+- Frontend web trao doi khoa lon duoi dang chuoi de tranh mat do chinh xac so trong JavaScript.

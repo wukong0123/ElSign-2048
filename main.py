@@ -5,10 +5,21 @@ import base64
 import json
 import math
 import secrets
+import webbrowser
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
+
+try:
+    import tkinter as tk
+    from tkinter import filedialog, messagebox, scrolledtext, ttk
+except ImportError:
+    tk = None
+    filedialog = None
+    messagebox = None
+    scrolledtext = None
+    ttk = None
 
 P_HEX = (
     "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E08"
@@ -206,12 +217,23 @@ def dump_json(path: Path, payload: dict[str, Any]) -> None:
 
 def load_public_key(path: Path) -> PublicKey:
     payload = load_json(path)
+    for field in ("p", "g", "y"):
+        payload[field] = int(payload[field])
     return PublicKey(**payload)
 
 
 def load_private_key(path: Path) -> PrivateKey:
     payload = load_json(path)
+    for field in ("p", "g", "y", "x"):
+        payload[field] = int(payload[field])
     return PrivateKey(**payload)
+
+
+def resolve_path(path_text: str, base_dir: Path | None = None) -> Path:
+    path = Path(path_text).expanduser()
+    if path.is_absolute():
+        return path
+    return (base_dir or Path.cwd()) / path
 
 
 def read_input_bytes(message: str | None, input_file: Path | None) -> bytes:
@@ -243,13 +265,18 @@ def write_text_output(text: str, output_file: Path | None) -> None:
     print(text)
 
 
-def handle_genkey(args: argparse.Namespace) -> None:
+def save_keypair(output_prefix: Path) -> tuple[Path, Path]:
     public_key, private_key = generate_keypair()
-    output_prefix = Path(args.output)
     public_path = output_prefix.with_suffix(".public.json")
     private_path = output_prefix.with_suffix(".private.json")
     dump_json(public_path, asdict(public_key))
     dump_json(private_path, asdict(private_key))
+    return public_path, private_path
+
+
+def handle_genkey(args: argparse.Namespace) -> None:
+    output_prefix = Path(args.output)
+    public_path, private_path = save_keypair(output_prefix)
     print(f"Da tao khoa cong khai: {public_path}")
     print(f"Da tao khoa bi mat: {private_path}")
 
@@ -292,6 +319,269 @@ def handle_verify(args: argparse.Namespace) -> None:
     print("Chu ky hop le." if is_valid else "Chu ky khong hop le.")
 
 
+def launch_gui() -> None:
+    if tk is None or ttk is None or filedialog is None or messagebox is None or scrolledtext is None:
+        raise RuntimeError("Tkinter khong co san trong moi truong Python hien tai.")
+
+    base_dir = Path.cwd()
+    root = tk.Tk()
+    root.title("ElGamal 2048-bit")
+    root.geometry("980x720")
+    root.minsize(900, 640)
+    root.configure(bg="#f3efe7")
+
+    style = ttk.Style(root)
+    if "clam" in style.theme_names():
+        style.theme_use("clam")
+    style.configure("App.TFrame", background="#f3efe7")
+    style.configure("Card.TLabelframe", background="#f8f5ef", borderwidth=1)
+    style.configure("Card.TLabelframe.Label", background="#f8f5ef", foreground="#3f3024")
+    style.configure("Title.TLabel", background="#f3efe7", foreground="#2f241b", font=("Georgia", 18, "bold"))
+    style.configure("Hint.TLabel", background="#f3efe7", foreground="#6d5f53", font=("Segoe UI", 10))
+    style.configure("Action.TButton", font=("Segoe UI", 10, "bold"))
+
+    status_var = tk.StringVar(value="San sang.")
+    key_prefix_var = tk.StringVar(value="receiver_key")
+    public_key_var = tk.StringVar(value=str(base_dir / "receiver_key.public.json"))
+    private_key_var = tk.StringVar(value=str(base_dir / "receiver_key.private.json"))
+    cipher_path_var = tk.StringVar(value=str(base_dir / "cipher.json"))
+    normalized_var = tk.StringVar(value="")
+
+    def set_status(message: str) -> None:
+        status_var.set(message)
+
+    def choose_open_file(target: tk.StringVar, filetypes: list[tuple[str, str]]) -> None:
+        selected = filedialog.askopenfilename(
+            title="Chon file",
+            initialdir=str(base_dir),
+            filetypes=filetypes,
+        )
+        if selected:
+            target.set(selected)
+
+    def choose_save_file(target: tk.StringVar, default_ext: str, filetypes: list[tuple[str, str]]) -> None:
+        selected = filedialog.asksaveasfilename(
+            title="Luu file",
+            initialdir=str(base_dir),
+            defaultextension=default_ext,
+            filetypes=filetypes,
+        )
+        if selected:
+            target.set(selected)
+
+    def refresh_normalized_preview(*_args: object) -> None:
+        raw_message = sender_input.get("1.0", "end-1c")
+        if not raw_message.strip():
+            normalized_var.set("")
+            return
+        try:
+            normalized_var.set(normalize_alpha_message(raw_message))
+        except ValueError:
+            normalized_var.set("")
+
+    def generate_receiver_keys() -> None:
+        try:
+            prefix_text = key_prefix_var.get().strip() or "receiver_key"
+            output_prefix = resolve_path(prefix_text, base_dir)
+            public_path, private_path = save_keypair(output_prefix)
+            public_key_var.set(str(public_path))
+            private_key_var.set(str(private_path))
+            sender_public_entry_var.set(str(public_path))
+            receiver_private_entry_var.set(str(private_path))
+            set_status(f"Da tao khoa cho ben nhan tai {public_path.name} va {private_path.name}.")
+            messagebox.showinfo("Tao khoa", "Da tao khoa cho ben nhan thanh cong.")
+        except Exception as exc:
+            messagebox.showerror("Loi tao khoa", str(exc))
+
+    def encrypt_for_receiver() -> None:
+        try:
+            public_key_path = resolve_path(sender_public_entry_var.get().strip(), base_dir)
+            output_path = resolve_path(sender_cipher_entry_var.get().strip() or "cipher.json", base_dir)
+            message = sender_input.get("1.0", "end-1c")
+            public_key = load_public_key(public_key_path)
+            ciphertext = encrypt_alpha_message(message, public_key)
+            dump_json(output_path, ciphertext)
+            normalized = normalize_alpha_message(message)
+            normalized_var.set(normalized)
+            receiver_cipher_entry_var.set(str(output_path))
+            receiver_output.configure(state="normal")
+            receiver_output.delete("1.0", "end")
+            receiver_output.insert("1.0", "Ban ma da duoc tao. Ben nhan co the mo file nay de giai ma.")
+            receiver_output.configure(state="disabled")
+            set_status(f"Ben gui da ma hoa va luu ban ma tai {output_path.name}.")
+            messagebox.showinfo("Ma hoa", f"Da ma hoa thong diep.\nDang chuan hoa: {normalized}")
+        except Exception as exc:
+            messagebox.showerror("Loi ma hoa", str(exc))
+
+    def decrypt_for_receiver() -> None:
+        try:
+            private_key_path = resolve_path(receiver_private_entry_var.get().strip(), base_dir)
+            cipher_path = resolve_path(receiver_cipher_entry_var.get().strip(), base_dir)
+            private_key = load_private_key(private_key_path)
+            ciphertext = load_json(cipher_path)
+            if ciphertext.get("encoding") == "alphabet-base26":
+                plaintext = decrypt_alpha_message(ciphertext, private_key)
+            else:
+                plaintext = decrypt_bytes(ciphertext, private_key).decode("utf-8")
+            receiver_output.configure(state="normal")
+            receiver_output.delete("1.0", "end")
+            receiver_output.insert("1.0", plaintext)
+            receiver_output.configure(state="disabled")
+            set_status(f"Ben nhan da giai ma thanh cong tu {cipher_path.name}.")
+        except Exception as exc:
+            messagebox.showerror("Loi giai ma", str(exc))
+
+    header = ttk.Frame(root, style="App.TFrame", padding=(22, 18, 22, 8))
+    header.pack(fill="x")
+    ttk.Label(header, text="ElGamal 2048-bit cho Ben Gui / Ben Nhan", style="Title.TLabel").pack(anchor="w")
+    ttk.Label(
+        header,
+        text="Thong diep van ban se duoc doi thanh chu in hoa A-Z va so hoa theo co so 26 truoc khi ma hoa.",
+        style="Hint.TLabel",
+    ).pack(anchor="w", pady=(6, 0))
+
+    notebook = ttk.Notebook(root)
+    notebook.pack(fill="both", expand=True, padx=18, pady=10)
+
+    sender_tab = ttk.Frame(notebook, style="App.TFrame", padding=18)
+    receiver_tab = ttk.Frame(notebook, style="App.TFrame", padding=18)
+    help_tab = ttk.Frame(notebook, style="App.TFrame", padding=18)
+    notebook.add(receiver_tab, text="Ben Nhan")
+    notebook.add(sender_tab, text="Ben Gui")
+    notebook.add(help_tab, text="Huong Dan")
+
+    key_card = ttk.LabelFrame(receiver_tab, text="1. Tao khoa cho ben nhan", style="Card.TLabelframe", padding=16)
+    key_card.pack(fill="x", pady=(0, 14))
+    ttk.Label(key_card, text="Tien to ten khoa:").grid(row=0, column=0, sticky="w")
+    ttk.Entry(key_card, textvariable=key_prefix_var, width=42).grid(row=0, column=1, sticky="ew", padx=(10, 10))
+    ttk.Button(key_card, text="Tao khoa", style="Action.TButton", command=generate_receiver_keys).grid(row=0, column=2, sticky="ew")
+    ttk.Label(key_card, text="Khoa cong khai:").grid(row=1, column=0, sticky="w", pady=(12, 0))
+    ttk.Entry(key_card, textvariable=public_key_var).grid(row=1, column=1, columnspan=2, sticky="ew", padx=(10, 0), pady=(12, 0))
+    ttk.Label(key_card, text="Khoa bi mat:").grid(row=2, column=0, sticky="w", pady=(10, 0))
+    ttk.Entry(key_card, textvariable=private_key_var).grid(row=2, column=1, columnspan=2, sticky="ew", padx=(10, 0), pady=(10, 0))
+    key_card.columnconfigure(1, weight=1)
+
+    decrypt_card = ttk.LabelFrame(receiver_tab, text="2. Giai ma cho ben nhan", style="Card.TLabelframe", padding=16)
+    decrypt_card.pack(fill="both", expand=True)
+    receiver_private_entry_var = tk.StringVar(value=private_key_var.get())
+    receiver_cipher_entry_var = tk.StringVar(value=cipher_path_var.get())
+    ttk.Label(decrypt_card, text="Khoa bi mat:").grid(row=0, column=0, sticky="w")
+    ttk.Entry(decrypt_card, textvariable=receiver_private_entry_var).grid(row=0, column=1, sticky="ew", padx=(10, 10))
+    ttk.Button(
+        decrypt_card,
+        text="Mo khoa",
+        command=lambda: choose_open_file(receiver_private_entry_var, [("JSON", "*.json"), ("All files", "*.*")]),
+    ).grid(row=0, column=2, sticky="ew")
+    ttk.Label(decrypt_card, text="File ban ma:").grid(row=1, column=0, sticky="w", pady=(10, 0))
+    ttk.Entry(decrypt_card, textvariable=receiver_cipher_entry_var).grid(row=1, column=1, sticky="ew", padx=(10, 10), pady=(10, 0))
+    ttk.Button(
+        decrypt_card,
+        text="Mo ban ma",
+        command=lambda: choose_open_file(receiver_cipher_entry_var, [("JSON", "*.json"), ("All files", "*.*")]),
+    ).grid(row=1, column=2, sticky="ew", pady=(10, 0))
+    ttk.Button(decrypt_card, text="Giai ma", style="Action.TButton", command=decrypt_for_receiver).grid(
+        row=2, column=0, columnspan=3, sticky="ew", pady=(14, 12)
+    )
+    receiver_output = scrolledtext.ScrolledText(
+        decrypt_card,
+        height=12,
+        wrap="word",
+        font=("Consolas", 11),
+        bg="#fffdf8",
+        fg="#2d241b",
+        relief="flat",
+    )
+    receiver_output.grid(row=3, column=0, columnspan=3, sticky="nsew")
+    receiver_output.configure(state="disabled")
+    decrypt_card.columnconfigure(1, weight=1)
+    decrypt_card.rowconfigure(3, weight=1)
+
+    sender_card = ttk.LabelFrame(sender_tab, text="Ma hoa thong diep cho ben nhan", style="Card.TLabelframe", padding=16)
+    sender_card.pack(fill="both", expand=True)
+    sender_public_entry_var = tk.StringVar(value=public_key_var.get())
+    sender_cipher_entry_var = tk.StringVar(value=cipher_path_var.get())
+    ttk.Label(sender_card, text="Khoa cong khai cua ben nhan:").grid(row=0, column=0, sticky="w")
+    ttk.Entry(sender_card, textvariable=sender_public_entry_var).grid(row=0, column=1, sticky="ew", padx=(10, 10))
+    ttk.Button(
+        sender_card,
+        text="Mo khoa",
+        command=lambda: choose_open_file(sender_public_entry_var, [("JSON", "*.json"), ("All files", "*.*")]),
+    ).grid(row=0, column=2, sticky="ew")
+    ttk.Label(sender_card, text="Thong diep goc:").grid(row=1, column=0, sticky="nw", pady=(12, 0))
+    sender_input = scrolledtext.ScrolledText(
+        sender_card,
+        height=12,
+        wrap="word",
+        font=("Consolas", 11),
+        bg="#fffdf8",
+        fg="#2d241b",
+        relief="flat",
+    )
+    sender_input.grid(row=1, column=1, columnspan=2, sticky="nsew", pady=(12, 0))
+    sender_input.bind("<KeyRelease>", refresh_normalized_preview)
+    ttk.Label(sender_card, text="Thong diep sau chuan hoa A-Z:").grid(row=2, column=0, sticky="w", pady=(12, 0))
+    ttk.Entry(sender_card, textvariable=normalized_var, state="readonly").grid(
+        row=2, column=1, columnspan=2, sticky="ew", padx=(10, 0), pady=(12, 0)
+    )
+    ttk.Label(sender_card, text="File ban ma dau ra:").grid(row=3, column=0, sticky="w", pady=(12, 0))
+    ttk.Entry(sender_card, textvariable=sender_cipher_entry_var).grid(row=3, column=1, sticky="ew", padx=(10, 10), pady=(12, 0))
+    ttk.Button(
+        sender_card,
+        text="Luu tai",
+        command=lambda: choose_save_file(sender_cipher_entry_var, ".json", [("JSON", "*.json"), ("All files", "*.*")]),
+    ).grid(row=3, column=2, sticky="ew", pady=(12, 0))
+    ttk.Button(sender_card, text="Ma hoa", style="Action.TButton", command=encrypt_for_receiver).grid(
+        row=4, column=0, columnspan=3, sticky="ew", pady=(16, 0)
+    )
+    sender_card.columnconfigure(1, weight=1)
+    sender_card.rowconfigure(1, weight=1)
+
+    guide_card = ttk.LabelFrame(help_tab, text="Quy trinh de xuat", style="Card.TLabelframe", padding=16)
+    guide_card.pack(fill="both", expand=True)
+    guide_text = scrolledtext.ScrolledText(
+        guide_card,
+        height=18,
+        wrap="word",
+        font=("Consolas", 11),
+        bg="#fffdf8",
+        fg="#2d241b",
+        relief="flat",
+    )
+    guide_text.pack(fill="both", expand=True)
+    guide_text.insert(
+        "1.0",
+        (
+            "1. Ben nhan vao tab 'Ben Nhan' va tao cap khoa.\n"
+            "2. Gui file khoa cong khai cho ben gui.\n"
+            "3. Ben gui vao tab 'Ben Gui', nhap thong diep va ma hoa.\n"
+            "4. Ben nhan mo file ban ma va giai ma.\n\n"
+            "Luu y:\n"
+            "- Thong diep van ban se bi chuan hoa: doi thanh chu in hoa va chi giu A-Z.\n"
+            "- Vi du 'Xin chao 2026' se thanh 'XINCHAO'.\n"
+            "- GUI nay tap trung cho luong gui/nhan thong diep; chuc nang ky so van co the dung bang CLI.\n"
+        ),
+    )
+    guide_text.configure(state="disabled")
+
+    status_bar = ttk.Label(root, textvariable=status_var, anchor="w", style="Hint.TLabel")
+    status_bar.pack(fill="x", padx=20, pady=(0, 16))
+
+    root.mainloop()
+
+
+def handle_gui(_args: argparse.Namespace) -> None:
+    launch_gui()
+
+
+def handle_web(args: argparse.Namespace) -> None:
+    from web_app import run_server
+
+    url = f"http://{args.host}:{args.port}"
+    if getattr(args, "open_browser", True):
+        webbrowser.open(url)
+    run_server(host=args.host, port=args.port)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="App ma hoa, giai ma va ky so ElGamal 2048-bit."
@@ -306,6 +596,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Tien to ten file output, mac dinh la elgamal_2048.",
     )
     genkey.set_defaults(func=handle_genkey)
+
+    gui = subparsers.add_parser("gui", help="Mo giao dien desktop cho ben gui/ben nhan.")
+    gui.set_defaults(func=handle_gui)
+
+    web = subparsers.add_parser("web", help="Chay frontend web tren localhost.")
+    web.add_argument("--host", default="127.0.0.1", help="Dia chi host, mac dinh la 127.0.0.1.")
+    web.add_argument("--port", type=int, default=8000, help="Cong web, mac dinh la 8000.")
+    web.add_argument(
+        "--no-browser",
+        action="store_false",
+        dest="open_browser",
+        help="Khong tu dong mo trinh duyet khi chay web app.",
+    )
+    web.set_defaults(func=handle_web)
 
     encrypt = subparsers.add_parser("encrypt", help="Ma hoa thong diep chu cai hoac file.")
     encrypt.add_argument("--key", required=True, help="Duong dan khoa cong khai JSON.")
@@ -349,7 +653,9 @@ def interactive_menu() -> None:
     print("3. Ben nhan giai ma thong diep")
     print("4. Ky thong diep")
     print("5. Kiem tra chu ky")
-    choice = input("Chon chuc nang (1-5): ").strip()
+    print("6. Mo giao dien desktop")
+    print("7. Chay frontend web")
+    choice = input("Chon chuc nang (1-7): ").strip()
 
     try:
         if choice == "1":
@@ -378,6 +684,10 @@ def interactive_menu() -> None:
             handle_verify(
                 argparse.Namespace(key=key, signature=signature, message=message, infile=None)
             )
+        elif choice == "6":
+            launch_gui()
+        elif choice == "7":
+            handle_web(argparse.Namespace(host="127.0.0.1", port=8000))
         else:
             print("Lua chon khong hop le.")
     except Exception as exc:
@@ -388,7 +698,7 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
     if not args.command:
-        interactive_menu()
+        handle_web(argparse.Namespace(host="127.0.0.1", port=8000, open_browser=True))
         return
     try:
         args.func(args)
