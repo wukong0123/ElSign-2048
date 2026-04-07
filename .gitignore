@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.public.json
+*.private.json
+cipher.json
+signature.json
+sample_*.json
+demo_*.json
