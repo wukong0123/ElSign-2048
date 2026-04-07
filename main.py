@@ -27,6 +27,20 @@ P_HEX = (
 P = int(P_HEX, 16)
 G = 2
 BLOCK_SIZE = (P.bit_length() - 1) // 8
+ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+ALPHABET_BASE = len(ALPHABET)
+
+
+def max_alpha_block_size() -> int:
+    size = 0
+    value = 1
+    while value * ALPHABET_BASE < P:
+        value *= ALPHABET_BASE
+        size += 1
+    return size
+
+
+ALPHA_BLOCK_SIZE = max_alpha_block_size()
 
 
 @dataclass
@@ -72,6 +86,59 @@ def generate_keypair() -> tuple[PublicKey, PrivateKey]:
         block_size=BLOCK_SIZE,
     )
     return public_key, private_key
+
+
+def normalize_alpha_message(message: str) -> str:
+    normalized = "".join(char for char in message.upper() if char in ALPHABET)
+    if not normalized:
+        raise ValueError("Thong diep phai co it nhat mot ky tu tu A den Z sau khi chuan hoa.")
+    return normalized
+
+
+def alpha_block_to_int(block: str) -> int:
+    value = 0
+    for char in block:
+        value = value * ALPHABET_BASE + ALPHABET.index(char)
+    return value
+
+
+def int_to_alpha_block(value: int, length: int) -> str:
+    chars = ["A"] * length
+    for index in range(length - 1, -1, -1):
+        value, digit = divmod(value, ALPHABET_BASE)
+        chars[index] = ALPHABET[digit]
+    return "".join(chars)
+
+
+def encrypt_alpha_message(message: str, public_key: PublicKey) -> dict[str, Any]:
+    normalized = normalize_alpha_message(message)
+    blocks: list[dict[str, str | int]] = []
+    for index in range(0, len(normalized), ALPHA_BLOCK_SIZE):
+        block = normalized[index : index + ALPHA_BLOCK_SIZE]
+        m = alpha_block_to_int(block)
+        k = random_coprime(public_key.p - 1)
+        a = pow(public_key.g, k, public_key.p)
+        b = (m * pow(public_key.y, k, public_key.p)) % public_key.p
+        blocks.append({"a": format(a, "x"), "b": format(b, "x"), "chars": len(block)})
+    return {
+        "algorithm": "ElGamal-2048",
+        "encoding": "alphabet-base26",
+        "alphabet": ALPHABET,
+        "char_block_size": ALPHA_BLOCK_SIZE,
+        "blocks": blocks,
+    }
+
+
+def decrypt_alpha_message(ciphertext: dict[str, Any], private_key: PrivateKey) -> str:
+    plaintext_blocks: list[str] = []
+    for block in ciphertext["blocks"]:
+        a = int(block["a"], 16)
+        b = int(block["b"], 16)
+        char_count = int(block["chars"])
+        shared_secret = pow(a, private_key.x, private_key.p)
+        m = (b * mod_inverse(shared_secret, private_key.p)) % private_key.p
+        plaintext_blocks.append(int_to_alpha_block(m, char_count))
+    return "".join(plaintext_blocks)
 
 
 def encrypt_bytes(plaintext: bytes, public_key: PublicKey) -> dict[str, Any]:
@@ -168,6 +235,14 @@ def write_plain_output(data: bytes, output_file: Path | None, as_text: bool) -> 
     print(base64.b64encode(data).decode("ascii"))
 
 
+def write_text_output(text: str, output_file: Path | None) -> None:
+    if output_file is not None:
+        output_file.write_text(text, encoding="utf-8")
+        print(f"Da ghi du lieu ra {output_file}")
+        return
+    print(text)
+
+
 def handle_genkey(args: argparse.Namespace) -> None:
     public_key, private_key = generate_keypair()
     output_prefix = Path(args.output)
@@ -181,8 +256,11 @@ def handle_genkey(args: argparse.Namespace) -> None:
 
 def handle_encrypt(args: argparse.Namespace) -> None:
     public_key = load_public_key(Path(args.key))
-    payload = read_input_bytes(args.message, Path(args.infile) if args.infile else None)
-    ciphertext = encrypt_bytes(payload, public_key)
+    if args.message is not None:
+        ciphertext = encrypt_alpha_message(args.message, public_key)
+    else:
+        payload = read_input_bytes(args.message, Path(args.infile) if args.infile else None)
+        ciphertext = encrypt_bytes(payload, public_key)
     dump_json(Path(args.outfile), ciphertext)
     print(f"Da ghi ban ma vao {args.outfile}")
 
@@ -190,6 +268,10 @@ def handle_encrypt(args: argparse.Namespace) -> None:
 def handle_decrypt(args: argparse.Namespace) -> None:
     private_key = load_private_key(Path(args.key))
     ciphertext = load_json(Path(args.infile))
+    if ciphertext.get("encoding") == "alphabet-base26":
+        plaintext = decrypt_alpha_message(ciphertext, private_key)
+        write_text_output(plaintext, Path(args.outfile) if args.outfile else None)
+        return
     plaintext = decrypt_bytes(ciphertext, private_key)
     write_plain_output(plaintext, Path(args.outfile) if args.outfile else None, args.text)
 
@@ -225,9 +307,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     genkey.set_defaults(func=handle_genkey)
 
-    encrypt = subparsers.add_parser("encrypt", help="Ma hoa chuoi hoac file.")
+    encrypt = subparsers.add_parser("encrypt", help="Ma hoa thong diep chu cai hoac file.")
     encrypt.add_argument("--key", required=True, help="Duong dan khoa cong khai JSON.")
-    encrypt.add_argument("--message", help="Chuoi UTF-8 can ma hoa.")
+    encrypt.add_argument("--message", help="Thong diep duoc chuan hoa ve A-Z va ma hoa theo base 26.")
     encrypt.add_argument("--infile", help="File can ma hoa.")
     encrypt.add_argument("--outfile", required=True, help="File JSON chua ban ma.")
     encrypt.set_defaults(func=handle_encrypt)
@@ -261,10 +343,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def interactive_menu() -> None:
-    print("=== ElGamal 2048-bit ===")
-    print("1. Tao khoa")
-    print("2. Ma hoa thong diep")
-    print("3. Giai ma thong diep")
+    print("=== ElGamal 2048-bit: Ben Gui / Ben Nhan ===")
+    print("1. Ben nhan tao khoa")
+    print("2. Ben gui ma hoa thong diep")
+    print("3. Ben nhan giai ma thong diep")
     print("4. Ky thong diep")
     print("5. Kiem tra chu ky")
     choice = input("Chon chuc nang (1-5): ").strip()
@@ -274,12 +356,14 @@ def interactive_menu() -> None:
             prefix = input("Nhap tien to ten file khoa [elgamal_2048]: ").strip() or "elgamal_2048"
             handle_genkey(argparse.Namespace(output=prefix))
         elif choice == "2":
-            key = input("Nhap file khoa cong khai: ").strip()
+            key = input("Nhap file khoa cong khai cua ben nhan: ").strip()
             message = input("Nhap thong diep can ma hoa: ")
             outfile = input("Nhap file JSON ban ma [cipher.json]: ").strip() or "cipher.json"
+            normalized = normalize_alpha_message(message)
+            print(f"Thong diep sau chuan hoa: {normalized}")
             handle_encrypt(argparse.Namespace(key=key, message=message, infile=None, outfile=outfile))
         elif choice == "3":
-            key = input("Nhap file khoa bi mat: ").strip()
+            key = input("Nhap file khoa bi mat cua ben nhan: ").strip()
             infile = input("Nhap file JSON ban ma [cipher.json]: ").strip() or "cipher.json"
             handle_decrypt(argparse.Namespace(key=key, infile=infile, outfile=None, text=True))
         elif choice == "4":
