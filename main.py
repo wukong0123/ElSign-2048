@@ -325,7 +325,7 @@ def launch_gui() -> None:
 
     base_dir = Path.cwd()
     root = tk.Tk()
-    root.title("ElGamal 2048-bit")
+    root.title("Elsign-2048")
     root.geometry("980x720")
     root.minsize(900, 640)
     root.configure(bg="#f3efe7")
@@ -433,7 +433,7 @@ def launch_gui() -> None:
 
     header = ttk.Frame(root, style="App.TFrame", padding=(22, 18, 22, 8))
     header.pack(fill="x")
-    ttk.Label(header, text="ElGamal 2048-bit cho Ben Gui / Ben Nhan", style="Title.TLabel").pack(anchor="w")
+    ttk.Label(header, text="Elsign-2048 cho Ben Gui / Ben Nhan", style="Title.TLabel").pack(anchor="w")
     ttk.Label(
         header,
         text="Thong diep van ban se duoc doi thanh chu in hoa A-Z va so hoa theo co so 26 truoc khi ma hoa.",
@@ -584,30 +584,30 @@ def handle_web(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="App ma hoa, giai ma va ky so ElGamal 2048-bit."
+        description="Elsign-2048: app ma hoa, giai ma va ky so ElGamal 2048-bit."
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    genkey = subparsers.add_parser("genkey", help="Tao cap khoa ElGamal 2048-bit.")
+    genkey = subparsers.add_parser("genkey", help="Tao cap khoa cho Elsign-2048.")
     genkey.add_argument(
         "-o",
         "--output",
-        default="elgamal_2048",
-        help="Tien to ten file output, mac dinh la elgamal_2048.",
+        default="elsign_2048",
+        help="Tien to ten file output, mac dinh la elsign_2048.",
     )
     genkey.set_defaults(func=handle_genkey)
 
     gui = subparsers.add_parser("gui", help="Mo giao dien desktop cho ben gui/ben nhan.")
     gui.set_defaults(func=handle_gui)
 
-    web = subparsers.add_parser("web", help="Chay frontend web tren localhost.")
+    web = subparsers.add_parser("web", help="Chay frontend web Elsign-2048 tren localhost.")
     web.add_argument("--host", default="127.0.0.1", help="Dia chi host, mac dinh la 127.0.0.1.")
     web.add_argument("--port", type=int, default=8000, help="Cong web, mac dinh la 8000.")
     web.add_argument(
         "--no-browser",
         action="store_false",
         dest="open_browser",
-        help="Khong tu dong mo trinh duyet khi chay web app.",
+        help="Khong tu dong mo trinh duyet khi chay web Elsign-2048.",
     )
     web.set_defaults(func=handle_web)
 
@@ -647,7 +647,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def interactive_menu() -> None:
-    print("=== ElGamal 2048-bit: Ben Gui / Ben Nhan ===")
+    print("=== Elsign-2048: Ben Gui / Ben Nhan ===")
     print("1. Ben nhan tao khoa")
     print("2. Ben gui ma hoa thong diep")
     print("3. Ben nhan giai ma thong diep")
@@ -659,7 +659,7 @@ def interactive_menu() -> None:
 
     try:
         if choice == "1":
-            prefix = input("Nhap tien to ten file khoa [elgamal_2048]: ").strip() or "elgamal_2048"
+            prefix = input("Nhap tien to ten file khoa [elsign_2048]: ").strip() or "elsign_2048"
             handle_genkey(argparse.Namespace(output=prefix))
         elif choice == "2":
             key = input("Nhap file khoa cong khai cua ben nhan: ").strip()

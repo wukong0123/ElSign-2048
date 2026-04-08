@@ -1,6 +1,6 @@
-# ElGamal 2048-bit
+# Elsign-2048
 
-App Python de tao khoa, ma hoa, giai ma, ky va kiem tra chu ky bang he mat ElGamal voi modulo 2048-bit.
+Elsign-2048 la app Python de tao khoa, ma hoa, giai ma, ky va kiem tra chu ky bang he mat ElGamal voi modulo 2048-bit.
 Phan thong diep van ban cho ben gui/ben nhan duoc so hoa theo bang chu cai `A-Z`: doi sang chu in hoa, bo qua ky tu khong nam trong `A-Z`, sau do duyet lan luot theo cong thuc `value = value * 26 + vi_tri_ky_tu`.
 
 ## Chay nhanh
@@ -21,8 +21,8 @@ Thong diep `"Xin chao"` se duoc chuan hoa thanh `XINCHAO` truoc khi ma hoa.
 ## Giai thich file
 
 - `main.py`: ung dung CLI va menu tuong tac.
-- `web_app.py`: backend nho de phuc vu frontend web.
-- `web/`: giao dien frontend HTML/CSS/JavaScript.
+- `web_app.py`: backend nho de phuc vu frontend web cua Elsign-2048.
+- `web/`: giao dien frontend HTML/CSS/JavaScript cua Elsign-2048.
 - `*.public.json`: khoa cong khai.
 - `*.private.json`: khoa bi mat.
 - `cipher.json`: ban ma duoi dang JSON.
@@ -35,7 +35,7 @@ Thong diep `"Xin chao"` se duoc chuan hoa thanh `XINCHAO` truoc khi ma hoa.
 - Ma hoa file van duoi dang chia khoi bytes, moi khoi duoc ma hoa rieng.
 - Khi giai ma ma khong truyen `--outfile`, du lieu nhi phan se duoc in ra man hinh bang Base64. Them `--text` neu plaintext la UTF-8.
 - Menu mac dinh da tach vai tro `Ben gui` va `Ben nhan` de thao tac nhanh voi thong diep van ban.
-- Co the mo GUI desktop bang `python main.py gui`. Giao dien nay tap trung vao tao khoa, ma hoa va giai ma thong diep giua ben gui va ben nhan.
+- Co the mo GUI desktop bang `python main.py gui`. Giao dien nay tap trung vao tao khoa, ma hoa va giai ma thong diep giua ben gui va ben nhan trong Elsign-2048.
 - Co the mo frontend web bang `python main.py web`, sau do truy cap `http://127.0.0.1:8000`.
 - Frontend web da duoc tach thanh 2 trang rieng:
   `http://127.0.0.1:8000/receiver` cho ben nhan va `http://127.0.0.1:8000/sender` cho ben gui.

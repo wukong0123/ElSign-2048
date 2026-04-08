@@ -43,8 +43,8 @@ def parse_private_key(payload: dict[str, Any]) -> PrivateKey:
     return PrivateKey(**normalized)
 
 
-class ElGamalWebHandler(BaseHTTPRequestHandler):
-    server_version = "ElGamalWeb/1.0"
+class ElsignWebHandler(BaseHTTPRequestHandler):
+    server_version = "ElsignWeb/1.0"
 
     def do_GET(self) -> None:
         if self.path in {"/", "/index.html", "/receiver", "/receiver.html"}:
@@ -144,8 +144,8 @@ class ElGamalWebHandler(BaseHTTPRequestHandler):
 
 
 def run_server(host: str = "127.0.0.1", port: int = 8000) -> None:
-    server = ThreadingHTTPServer((host, port), ElGamalWebHandler)
-    print(f"ElGamal web app dang chay tai http://{host}:{port}")
+    server = ThreadingHTTPServer((host, port), ElsignWebHandler)
+    print(f"Elsign-2048 web app dang chay tai http://{host}:{port}")
     print("Nhan Ctrl+C de dung server.")
     try:
         server.serve_forever()

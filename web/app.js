@@ -2,9 +2,9 @@ const page = document.body.dataset.page;
 const statusBar = document.getElementById("statusBar");
 
 const STORAGE_KEYS = {
-  publicKey: "elgamal_public_key",
-  privateKey: "elgamal_private_key",
-  ciphertext: "elgamal_ciphertext",
+  publicKey: "elsign_2048_public_key",
+  privateKey: "elsign_2048_private_key",
+  ciphertext: "elsign_2048_ciphertext",
 };
 
 function setStatus(message, isError = false) {
