@@ -37,5 +37,7 @@ Thong diep `"Xin chao"` se duoc chuan hoa thanh `XINCHAO` truoc khi ma hoa.
 - Menu mac dinh da tach vai tro `Ben gui` va `Ben nhan` de thao tac nhanh voi thong diep van ban.
 - Co the mo GUI desktop bang `python main.py gui`. Giao dien nay tap trung vao tao khoa, ma hoa va giai ma thong diep giua ben gui va ben nhan.
 - Co the mo frontend web bang `python main.py web`, sau do truy cap `http://127.0.0.1:8000`.
+- Frontend web da duoc tach thanh 2 trang rieng:
+  `http://127.0.0.1:8000/receiver` cho ben nhan va `http://127.0.0.1:8000/sender` cho ben gui.
 - Khi chay `python main.py` khong kem tham so, app se tu dong bat web server va mo frontend trong trinh duyet.
 - Frontend web trao doi khoa lon duoi dang chuoi de tranh mat do chinh xac so trong JavaScript.

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ElGamal 2048 - Ben Gui</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-page="sender">
+    <div class="page-shell">
+      <header class="hero">
+        <nav class="top-nav">
+          <a class="nav-link" href="/receiver">Ben nhan</a>
+          <a class="nav-link active" href="/sender">Ben gui</a>
+        </nav>
+        <p class="eyebrow">ElGamal 2048-bit</p>
+        <h1>Trang rieng cho ben gui</h1>
+        <p class="hero-copy">
+          Nhan khoa cong khai tu ben nhan, chuan hoa thong diep ve A-Z, va tao ban ma JSON.
+        </p>
+        <div class="status-bar" id="statusBar">San sang cho ben gui.</div>
+      </header>
+
+      <main class="stack-board">
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-tag">Buoc 1</p>
+              <h2>Nhan khoa cong khai</h2>
+            </div>
+          </div>
+          <p class="panel-copy">
+            Ban co the dan khoa cong khai thu cong, hoac lay tu trang ben nhan neu da co san trong trinh duyet nay.
+          </p>
+          <div class="button-row">
+            <button id="loadPublicKeyBtn" class="ghost-button">Lay khoa tu ben nhan</button>
+          </div>
+          <label for="senderPublicKeyArea">Khoa cong khai cua ben nhan</label>
+          <textarea id="senderPublicKeyArea" class="code-box" spellcheck="false"></textarea>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-tag">Buoc 2</p>
+              <h2>Ma hoa thong diep</h2>
+            </div>
+          </div>
+          <p class="panel-copy">
+            Thong diep duoc doi sang chu in hoa, chi giu A-Z, sau do ma hoa bang ElGamal.
+          </p>
+          <label for="senderMessage">Thong diep goc</label>
+          <textarea id="senderMessage" class="message-box" spellcheck="false" placeholder="Vi du: Xin chao 2026"></textarea>
+          <label for="normalizedPreview">Thong diep sau chuan hoa A-Z</label>
+          <input id="normalizedPreview" class="single-line" type="text" readonly />
+          <div class="button-row">
+            <button id="encryptBtn" class="primary-button">Ma hoa</button>
+            <button id="downloadCipherBtn" class="ghost-button">Tai ban ma</button>
+            <button id="sendCipherBtn" class="ghost-button">Chuyen ban ma sang ben nhan</button>
+          </div>
+          <label for="ciphertextArea">Ban ma JSON</label>
+          <textarea id="ciphertextArea" class="code-box" spellcheck="false"></textarea>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

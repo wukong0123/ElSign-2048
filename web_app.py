@@ -47,8 +47,11 @@ class ElGamalWebHandler(BaseHTTPRequestHandler):
     server_version = "ElGamalWeb/1.0"
 
     def do_GET(self) -> None:
-        if self.path in {"/", "/index.html"}:
-            self._serve_file(FRONTEND_DIR / "index.html", "text/html; charset=utf-8")
+        if self.path in {"/", "/index.html", "/receiver", "/receiver.html"}:
+            self._serve_file(FRONTEND_DIR / "receiver.html", "text/html; charset=utf-8")
+            return
+        if self.path in {"/sender", "/sender.html"}:
+            self._serve_file(FRONTEND_DIR / "sender.html", "text/html; charset=utf-8")
             return
         if self.path == "/styles.css":
             self._serve_file(FRONTEND_DIR / "styles.css", "text/css; charset=utf-8")

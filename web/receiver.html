@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ElGamal 2048 - Ben Nhan</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-page="receiver">
+    <div class="page-shell">
+      <header class="hero">
+        <nav class="top-nav">
+          <a class="nav-link active" href="/receiver">Ben nhan</a>
+          <a class="nav-link" href="/sender">Ben gui</a>
+        </nav>
+        <p class="eyebrow">ElGamal 2048-bit</p>
+        <h1>Trang rieng cho ben nhan</h1>
+        <p class="hero-copy">
+          Tao cap khoa, luu khoa bi mat, va giai ma ban ma nhan duoc tu ben gui.
+        </p>
+        <div class="status-bar" id="statusBar">San sang cho ben nhan.</div>
+      </header>
+
+      <main class="stack-board">
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-tag">Buoc 1</p>
+              <h2>Tao cap khoa</h2>
+            </div>
+          </div>
+          <p class="panel-copy">
+            Sau khi tao khoa, ban co the tai file JSON hoac chuyen khoa cong khai sang trang ben gui.
+          </p>
+          <div class="button-row">
+            <button id="generateKeysBtn" class="primary-button">Tao khoa 2048-bit</button>
+            <button id="downloadPublicBtn" class="ghost-button">Tai public key</button>
+            <button id="downloadPrivateBtn" class="ghost-button">Tai private key</button>
+            <button id="sendPublicKeyBtn" class="ghost-button">Chuyen public key sang ben gui</button>
+          </div>
+          <label for="publicKeyArea">Khoa cong khai</label>
+          <textarea id="publicKeyArea" class="code-box" spellcheck="false"></textarea>
+          <label for="privateKeyArea">Khoa bi mat</label>
+          <textarea id="privateKeyArea" class="code-box" spellcheck="false"></textarea>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-tag">Buoc 2</p>
+              <h2>Giai ma thong diep</h2>
+            </div>
+          </div>
+          <p class="panel-copy">
+            Dan khoa bi mat va ban ma JSON. Ban ma co the duoc tu dong chuyen tu trang ben gui.
+          </p>
+          <div class="button-row">
+            <button id="loadCipherBtn" class="ghost-button">Lay ban ma tu ben gui</button>
+            <button id="decryptBtn" class="primary-button">Giai ma</button>
+            <button id="copyPlaintextBtn" class="ghost-button">Sao chep ket qua</button>
+          </div>
+          <div class="split-grid">
+            <div>
+              <label for="decryptPrivateKeyArea">Khoa bi mat</label>
+              <textarea id="decryptPrivateKeyArea" class="code-box" spellcheck="false"></textarea>
+            </div>
+            <div>
+              <label for="decryptCiphertextArea">Ban ma JSON</label>
+              <textarea id="decryptCiphertextArea" class="code-box" spellcheck="false"></textarea>
+            </div>
+          </div>
+          <label for="plaintextArea">Thong diep sau giai ma</label>
+          <textarea id="plaintextArea" class="message-box output-box" readonly></textarea>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
