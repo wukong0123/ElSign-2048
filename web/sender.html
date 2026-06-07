@@ -3,63 +3,168 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Elsign-2048 - Ben Gui</title>
+    <title>Elsign-2048 - Người gửi</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body data-page="sender">
     <div class="page-shell">
-      <header class="hero">
-        <nav class="top-nav">
-          <a class="nav-link" href="/receiver">Ben nhan</a>
-          <a class="nav-link active" href="/sender">Ben gui</a>
+      <header class="app-header">
+        <nav class="top-nav" aria-label="Điều hướng chính">
+          <a class="nav-link" href="/receiver">Người nhận</a>
+          <a class="nav-link active" href="/sender">Người gửi</a>
         </nav>
-        <p class="eyebrow">Elsign-2048</p>
-        <h1>Trang rieng cho ben gui</h1>
-        <p class="hero-copy">
-          Nhan khoa cong khai tu ben nhan, chuan hoa thong diep ve A-Z, va tao ban ma JSON.
-        </p>
-        <div class="status-bar" id="statusBar">San sang cho ben gui.</div>
+        <div class="hero-grid">
+          <div>
+            <p class="eyebrow">Elsign-2048</p>
+            <h1>Ký số và gửi dữ liệu bằng ElGamal</h1>
+            <p class="hero-copy">
+              Người gửi tạo khóa ký số riêng, dùng private key để ký và gửi public key cho người nhận kiểm tra chữ ký.
+            </p>
+          </div>
+          <aside class="notice-card">
+            <strong>Hai loại khóa khác nhau</strong>
+            <span>Public key của người nhận dùng để mã hóa. Private key của người gửi dùng để ký số.</span>
+          </aside>
+        </div>
+        <div class="status-bar">
+          <span id="statusBar">Sẵn sàng cho người gửi.</span>
+          <div class="progress-container" id="progressContainer">
+            <div class="progress-bar"></div>
+          </div>
+        </div>
       </header>
 
       <main class="stack-board">
-        <section class="panel">
+        <section class="panel signature-panel">
           <div class="panel-header">
+            <span class="step-badge">Bước 1</span>
             <div>
-              <p class="panel-tag">Buoc 1</p>
-              <h2>Nhan khoa cong khai</h2>
+              <h2>Tạo khóa ký số cho người gửi</h2>
+              <p class="panel-copy">Giữ private key để ký. Gửi public key cho người nhận để họ xác minh chữ ký của bạn.</p>
             </div>
           </div>
-          <p class="panel-copy">
-            Ban co the dan khoa cong khai thu cong, hoac lay tu trang ben nhan neu da co san trong trinh duyet nay.
-          </p>
+
+          <label for="senderPrimeModeSelect">Chế độ sinh số nguyên tố</label>
+          <select id="senderPrimeModeSelect" class="single-line">
+            <option value="1">Nhanh - kiểm tra xác suất</option>
+            <option value="2" selected>An toàn - dùng pool đã chuẩn bị</option>
+            <option value="3">Tự sinh có chứng chỉ - chậm hơn</option>
+          </select>
+
           <div class="button-row">
-            <button id="loadPublicKeyBtn" class="ghost-button">Lay khoa tu ben nhan</button>
+            <button id="generateSenderKeysBtn" class="primary-button">Tạo khóa người gửi</button>
+            <button id="downloadSenderPublicBtn" class="ghost-button">Tải public key người gửi</button>
+            <button id="downloadSenderPrivateBtn" class="ghost-button">Tải private key người gửi</button>
+            <button id="sendSenderPublicKeyBtn" class="ghost-button">Chuyển public key sang người nhận</button>
           </div>
-          <label for="senderPublicKeyArea">Khoa cong khai cua ben nhan</label>
-          <textarea id="senderPublicKeyArea" class="code-box" spellcheck="false"></textarea>
+
+          <div class="split-grid">
+            <div>
+              <label for="senderSigningPublicKeyArea">Public key của người gửi</label>
+              <textarea id="senderSigningPublicKeyArea" class="code-box" spellcheck="false" placeholder="Public key người gửi sẽ xuất hiện ở đây"></textarea>
+            </div>
+            <div>
+              <label for="senderPrivateKeyArea">Private key của người gửi</label>
+              <textarea id="senderPrivateKeyArea" class="code-box sensitive-box" spellcheck="false" placeholder="Private key này dùng để ký số"></textarea>
+            </div>
+          </div>
         </section>
 
         <section class="panel">
           <div class="panel-header">
+            <span class="step-badge">Bước 2</span>
             <div>
-              <p class="panel-tag">Buoc 2</p>
-              <h2>Ma hoa thong diep</h2>
+              <h2>Nhận khóa công khai của người nhận</h2>
+              <p class="panel-copy">Dán public key người nhận cung cấp, hoặc lấy nhanh từ trang Người nhận trong cùng trình duyệt.</p>
             </div>
           </div>
-          <p class="panel-copy">
-            Thong diep duoc doi sang chu in hoa, chi giu A-Z, sau do ma hoa bang ElGamal trong Elsign-2048.
-          </p>
-          <label for="senderMessage">Thong diep goc</label>
-          <textarea id="senderMessage" class="message-box" spellcheck="false" placeholder="Vi du: Xin chao 2026"></textarea>
-          <label for="normalizedPreview">Thong diep sau chuan hoa A-Z</label>
-          <input id="normalizedPreview" class="single-line" type="text" readonly />
-          <div class="button-row">
-            <button id="encryptBtn" class="primary-button">Ma hoa</button>
-            <button id="downloadCipherBtn" class="ghost-button">Tai ban ma</button>
-            <button id="sendCipherBtn" class="ghost-button">Chuyen ban ma sang ben nhan</button>
+          <div class="button-row compact">
+            <button id="loadPublicKeyBtn" class="ghost-button">Lấy khóa từ người nhận</button>
           </div>
-          <label for="ciphertextArea">Ban ma JSON</label>
-          <textarea id="ciphertextArea" class="code-box" spellcheck="false"></textarea>
+          <label for="senderPublicKeyArea">Public key của người nhận</label>
+          <textarea id="senderPublicKeyArea" class="code-box" spellcheck="false" placeholder="Dán public key JSON của người nhận tại đây"></textarea>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <span class="step-badge">Bước 3</span>
+            <div>
+              <h2>Mã hóa thông điệp hoặc file</h2>
+              <p class="panel-copy">Văn bản demo sẽ được chuẩn hóa về A-Z. Với file, ứng dụng dùng cơ chế hybrid để xử lý dữ liệu nhị phân.</p>
+            </div>
+          </div>
+
+          <div class="segmented-control" role="radiogroup" aria-label="Chế độ mã hóa">
+            <label>
+              <input type="radio" name="encryptMode" value="text" checked />
+              <span>Văn bản A-Z</span>
+            </label>
+            <label>
+              <input type="radio" name="encryptMode" value="file" />
+              <span>File bất kỳ</span>
+            </label>
+          </div>
+
+          <div id="textModeContainer">
+            <label for="senderMessage">Thông điệp gốc</label>
+            <textarea id="senderMessage" class="message-box" spellcheck="false" placeholder="Ví dụ: Xin chào 2026"></textarea>
+            <label for="normalizedPreview">Sau chuẩn hóa A-Z</label>
+            <input id="normalizedPreview" class="single-line" type="text" readonly />
+          </div>
+
+          <div id="fileModeContainer" class="file-panel" style="display: none">
+            <label for="senderFile">Chọn file gốc</label>
+            <input type="file" id="senderFile" class="single-line" />
+          </div>
+
+          <div class="button-row">
+            <button id="encryptBtn" class="primary-button">Mã hóa</button>
+            <button id="downloadCipherBtn" class="ghost-button">Tải bản mã</button>
+            <button id="sendCipherBtn" class="ghost-button">Chuyển sang người nhận</button>
+          </div>
+          <label for="ciphertextArea">Bản mã JSON</label>
+          <textarea id="ciphertextArea" class="code-box" spellcheck="false" placeholder="Bản mã sẽ xuất hiện tại đây sau khi mã hóa"></textarea>
+        </section>
+
+        <section class="panel signature-panel">
+          <div class="panel-header">
+            <span class="step-badge">Bước 4</span>
+            <div>
+              <h2>Ký số nội dung</h2>
+              <p class="panel-copy">Chữ ký số giúp người nhận xác minh nội dung không bị sửa và đúng là do bạn ký.</p>
+            </div>
+          </div>
+
+          <div class="segmented-control" role="radiogroup" aria-label="Chế độ ký">
+            <label>
+              <input type="radio" name="signMode" value="text" checked />
+              <span>Ký văn bản</span>
+            </label>
+            <label>
+              <input type="radio" name="signMode" value="file" />
+              <span>Ký file</span>
+            </label>
+          </div>
+
+          <div id="signTextModeContainer">
+            <label for="signMessage">Nội dung cần ký</label>
+            <textarea id="signMessage" class="message-box" spellcheck="false" placeholder="Nhập đúng nội dung mà người nhận sẽ kiểm tra"></textarea>
+          </div>
+
+          <div id="signFileModeContainer" class="file-panel" style="display: none">
+            <label for="signFile">Chọn file cần ký</label>
+            <input type="file" id="signFile" class="single-line" />
+          </div>
+
+          <div class="button-row">
+            <button id="signBtn" class="primary-button">Tạo chữ ký</button>
+            <button id="downloadSignatureBtn" class="ghost-button">Tải chữ ký JSON</button>
+            <button id="sendSignatureBtn" class="ghost-button">Chuyển chữ ký sang người nhận</button>
+            <button id="downloadSignedPackageBtn" class="ghost-button">Tải gói đã ký</button>
+            <button id="sendSignedPackageBtn" class="ghost-button">Chuyển gói đã ký sang người nhận</button>
+          </div>
+          <label for="signatureArea">Chữ ký JSON</label>
+          <textarea id="signatureArea" class="code-box" spellcheck="false" placeholder="Chữ ký gồm r và s sẽ xuất hiện tại đây"></textarea>
         </section>
       </main>
     </div>

@@ -3,74 +3,162 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Elsign-2048 - Ben Nhan</title>
+    <title>Elsign-2048 - Người nhận</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body data-page="receiver">
     <div class="page-shell">
-      <header class="hero">
-        <nav class="top-nav">
-          <a class="nav-link active" href="/receiver">Ben nhan</a>
-          <a class="nav-link" href="/sender">Ben gui</a>
+      <header class="app-header">
+        <nav class="top-nav" aria-label="Điều hướng chính">
+          <a class="nav-link active" href="/receiver">Người nhận</a>
+          <a class="nav-link" href="/sender">Người gửi</a>
         </nav>
-        <p class="eyebrow">Elsign-2048</p>
-        <h1>Trang rieng cho ben nhan</h1>
-        <p class="hero-copy">
-          Tao cap khoa, luu khoa bi mat, va giai ma ban ma nhan duoc tu ben gui.
-        </p>
-        <div class="status-bar" id="statusBar">San sang cho ben nhan.</div>
+        <div class="hero-grid">
+          <div>
+            <p class="eyebrow">Elsign-2048</p>
+            <h1>Tạo khóa, giải mã và xác minh chữ ký</h1>
+            <p class="hero-copy">
+              Người nhận tạo khóa để giải mã dữ liệu, đồng thời dùng public key của người gửi để kiểm tra chữ ký số.
+            </p>
+          </div>
+          <aside class="notice-card">
+            <strong>Không dùng nhầm khóa</strong>
+            <span>Private key của người nhận dùng để giải mã. Public key của người gửi dùng để xác minh chữ ký.</span>
+          </aside>
+        </div>
+        <div class="status-bar">
+          <span id="statusBar">Sẵn sàng cho người nhận.</span>
+          <div class="progress-container" id="progressContainer">
+            <div class="progress-bar"></div>
+          </div>
+        </div>
       </header>
 
       <main class="stack-board">
         <section class="panel">
           <div class="panel-header">
+            <span class="step-badge">Bước 1</span>
             <div>
-              <p class="panel-tag">Buoc 1</p>
-              <h2>Tao cap khoa</h2>
+              <h2>Tạo cặp khóa để nhận dữ liệu mã hóa</h2>
+              <p class="panel-copy">Gửi public key này cho người gửi để họ mã hóa dữ liệu cho bạn. Giữ riêng private key để giải mã.</p>
             </div>
           </div>
-          <p class="panel-copy">
-            Sau khi tao khoa, ban co the tai file JSON hoac chuyen khoa cong khai sang trang ben gui.
-          </p>
+
+          <label for="primeModeSelect">Chế độ sinh số nguyên tố</label>
+          <select id="primeModeSelect" class="single-line">
+            <option value="1">Nhanh - kiểm tra xác suất</option>
+            <option value="2" selected>An toàn - dùng pool đã chuẩn bị</option>
+            <option value="3">Tự sinh có chứng chỉ - chậm hơn</option>
+          </select>
+
           <div class="button-row">
-            <button id="generateKeysBtn" class="primary-button">Tao khoa 2048-bit</button>
-            <button id="downloadPublicBtn" class="ghost-button">Tai public key</button>
-            <button id="downloadPrivateBtn" class="ghost-button">Tai private key</button>
-            <button id="sendPublicKeyBtn" class="ghost-button">Chuyen public key sang ben gui</button>
+            <button id="generateKeysBtn" class="primary-button">Tạo khóa người nhận</button>
+            <button id="downloadPublicBtn" class="ghost-button">Tải public key người nhận</button>
+            <button id="downloadPrivateBtn" class="ghost-button">Tải private key người nhận</button>
+            <button id="sendPublicKeyBtn" class="ghost-button">Chuyển public key sang người gửi</button>
           </div>
-          <label for="publicKeyArea">Khoa cong khai</label>
-          <textarea id="publicKeyArea" class="code-box" spellcheck="false"></textarea>
-          <label for="privateKeyArea">Khoa bi mat</label>
-          <textarea id="privateKeyArea" class="code-box" spellcheck="false"></textarea>
+
+          <div class="split-grid">
+            <div>
+              <label for="publicKeyArea">Public key của người nhận</label>
+              <textarea id="publicKeyArea" class="code-box" spellcheck="false" placeholder="Public key sẽ xuất hiện sau khi tạo khóa"></textarea>
+            </div>
+            <div>
+              <label for="privateKeyArea">Private key của người nhận</label>
+              <textarea id="privateKeyArea" class="code-box sensitive-box" spellcheck="false" placeholder="Giữ riêng private key này"></textarea>
+            </div>
+          </div>
         </section>
 
         <section class="panel">
           <div class="panel-header">
+            <span class="step-badge">Bước 2</span>
             <div>
-              <p class="panel-tag">Buoc 2</p>
-              <h2>Giai ma thong diep</h2>
+              <h2>Giải mã dữ liệu nhận được</h2>
+              <p class="panel-copy">Dán private key của người nhận và bản mã JSON. Với file, ứng dụng sẽ tải file đã giải mã về máy.</p>
             </div>
           </div>
-          <p class="panel-copy">
-            Dan khoa bi mat va ban ma JSON. Ban ma co the duoc tu dong chuyen tu trang ben gui.
-          </p>
-          <div class="button-row">
-            <button id="loadCipherBtn" class="ghost-button">Lay ban ma tu ben gui</button>
-            <button id="decryptBtn" class="primary-button">Giai ma</button>
-            <button id="copyPlaintextBtn" class="ghost-button">Sao chep ket qua</button>
+
+          <div class="button-row compact">
+            <button id="loadCipherBtn" class="ghost-button">Lấy bản mã từ người gửi</button>
+            <label class="ghost-button file-button">
+              Tải lên bản mã JSON
+              <input type="file" id="uploadCipherFile" accept=".json" />
+            </label>
+            <button id="decryptBtn" class="primary-button">Giải mã</button>
+            <button id="copyPlaintextBtn" class="ghost-button">Sao chép kết quả</button>
           </div>
+
           <div class="split-grid">
             <div>
-              <label for="decryptPrivateKeyArea">Khoa bi mat</label>
-              <textarea id="decryptPrivateKeyArea" class="code-box" spellcheck="false"></textarea>
+              <label for="decryptPrivateKeyArea">Private key của người nhận</label>
+              <textarea id="decryptPrivateKeyArea" class="code-box sensitive-box" spellcheck="false"></textarea>
             </div>
             <div>
-              <label for="decryptCiphertextArea">Ban ma JSON</label>
+              <label for="decryptCiphertextArea">Bản mã JSON</label>
               <textarea id="decryptCiphertextArea" class="code-box" spellcheck="false"></textarea>
             </div>
           </div>
-          <label for="plaintextArea">Thong diep sau giai ma</label>
+          <label for="plaintextArea">Kết quả giải mã</label>
           <textarea id="plaintextArea" class="message-box output-box" readonly></textarea>
+        </section>
+
+        <section class="panel signature-panel">
+          <div class="panel-header">
+            <span class="step-badge">Bước 3</span>
+            <div>
+              <h2>Xác minh chữ ký số</h2>
+              <p class="panel-copy">Dùng public key của người gửi, nội dung gốc và chữ ký JSON để kiểm tra tính hợp lệ.</p>
+            </div>
+          </div>
+
+          <label for="verifyPublicKeyArea">Public key của người gửi</label>
+          <div class="button-row compact">
+            <button id="loadSenderPublicKeyBtn" class="ghost-button">Lấy public key từ người gửi</button>
+          </div>
+          <textarea id="verifyPublicKeyArea" class="code-box" spellcheck="false" placeholder="Dán public key của người gửi tại đây"></textarea>
+
+          <div class="segmented-control" role="radiogroup" aria-label="Chế độ xác minh">
+            <label>
+              <input type="radio" name="verifyMode" value="text" checked />
+              <span>Kiểm tra văn bản</span>
+            </label>
+            <label>
+              <input type="radio" name="verifyMode" value="file" />
+              <span>Kiểm tra file</span>
+            </label>
+          </div>
+
+          <div id="verifyTextModeContainer">
+            <label for="verifyMessage">Nội dung gốc cần kiểm tra</label>
+            <textarea id="verifyMessage" class="message-box" spellcheck="false" placeholder="Nhập đúng nội dung mà người gửi đã ký"></textarea>
+          </div>
+
+          <div id="verifyFileModeContainer" class="file-panel" style="display: none">
+            <label for="verifyFile">Chọn file gốc cần kiểm tra</label>
+            <input type="file" id="verifyFile" class="single-line" />
+          </div>
+
+          <label for="verifySignatureArea">Chữ ký JSON</label>
+          <div class="button-row compact">
+            <button id="loadSignatureBtn" class="ghost-button">Lấy chữ ký từ người gửi</button>
+            <button id="loadSignedPackageBtn" class="ghost-button">Lấy gói đã ký từ người gửi</button>
+            <label class="ghost-button file-button">
+              Tải lên chữ ký JSON
+              <input type="file" id="uploadSignatureFile" accept=".json" />
+            </label>
+            <label class="ghost-button file-button">
+              Tải lên gói đã ký
+              <input type="file" id="uploadSignedPackageFile" accept=".json" />
+            </label>
+          </div>
+          <textarea id="verifySignatureArea" class="code-box" spellcheck="false" placeholder="Dán chữ ký JSON gồm r và s"></textarea>
+
+          <div class="button-row">
+            <button id="verifyBtn" class="primary-button">Kiểm tra chữ ký</button>
+          </div>
+          <label for="verifyResultArea">Kết quả xác minh</label>
+          <textarea id="verifyResultArea" class="message-box output-box result-box" readonly></textarea>
         </section>
       </main>
     </div>

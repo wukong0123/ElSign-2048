@@ -5,6 +5,7 @@ import base64
 import json
 import math
 import secrets
+import struct
 import webbrowser
 from dataclasses import asdict, dataclass
 from hashlib import sha256
@@ -21,7 +22,7 @@ except ImportError:
     scrolledtext = None
     ttk = None
 
-P_HEX = (
+P_HEX_DEFAULT = (
     "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E08"
     "8A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD"
     "3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E"
@@ -35,23 +36,17 @@ P_HEX = (
     "FFFFFFFF"
 )
 
-P = int(P_HEX, 16)
-G = 2
-BLOCK_SIZE = (P.bit_length() - 1) // 8
 ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 ALPHABET_BASE = len(ALPHABET)
 
 
-def max_alpha_block_size() -> int:
+def max_alpha_block_size(p: int) -> int:
     size = 0
     value = 1
-    while value * ALPHABET_BASE < P:
+    while value * ALPHABET_BASE < p:
         value *= ALPHABET_BASE
         size += 1
     return size
-
-
-ALPHA_BLOCK_SIZE = max_alpha_block_size()
 
 
 @dataclass
@@ -61,6 +56,7 @@ class PublicKey:
     y: int
     bits: int
     block_size: int
+    prime_certificate: dict[str, Any] | None = None
 
 
 @dataclass
@@ -71,6 +67,7 @@ class PrivateKey:
     x: int
     bits: int
     block_size: int
+    prime_certificate: dict[str, Any] | None = None
 
 
 def mod_inverse(value: int, modulus: int) -> int:
@@ -84,17 +81,50 @@ def random_coprime(modulus: int) -> int:
             return candidate
 
 
-def generate_keypair() -> tuple[PublicKey, PrivateKey]:
-    x = secrets.randbelow(P - 3) + 2
-    y = pow(G, x, P)
-    public_key = PublicKey(p=P, g=G, y=y, bits=P.bit_length(), block_size=BLOCK_SIZE)
+def generate_keypair(prime_mode: int = 2) -> tuple[PublicKey, PrivateKey]:
+    import random
+    from primes import generate_probable_prime, generate_provable_prime
+    
+    p = None
+    prime_cert = None
+    
+    if prime_mode == 1:
+        p = generate_probable_prime(2048)
+    elif prime_mode == 2:
+        try:
+            pool_path = Path(__file__).parent / "certified_pool.json"
+            if not pool_path.exists():
+                print("Không tìm thấy certified_pool.json. Tự động sinh ngẫu nhiên.")
+                p = generate_probable_prime(2048)
+            else:
+                with pool_path.open("r", encoding="utf-8") as f:
+                    pool = json.load(f)
+                choice = random.choice(pool)
+                p = choice["p"]
+                prime_cert = choice.get("prime_certificate")
+        except Exception as e:
+            print(f"Lỗi đọc pool: {e}. Chuyển sang sinh ngẫu nhiên.")
+            p = generate_probable_prime(2048)
+    elif prime_mode == 3:
+        p, prime_cert = generate_provable_prime(2048)
+    
+    if p is None:
+        p = int(P_HEX_DEFAULT, 16)
+        
+    g = 2
+    block_size = (p.bit_length() - 1) // 8
+    x = secrets.randbelow(p - 3) + 2
+    y = pow(g, x, p)
+    
+    public_key = PublicKey(p=p, g=g, y=y, bits=p.bit_length(), block_size=block_size, prime_certificate=prime_cert)
     private_key = PrivateKey(
-        p=P,
-        g=G,
+        p=p,
+        g=g,
         y=y,
         x=x,
-        bits=P.bit_length(),
-        block_size=BLOCK_SIZE,
+        bits=p.bit_length(),
+        block_size=block_size,
+        prime_certificate=prime_cert,
     )
     return public_key, private_key
 
@@ -124,8 +154,9 @@ def int_to_alpha_block(value: int, length: int) -> str:
 def encrypt_alpha_message(message: str, public_key: PublicKey) -> dict[str, Any]:
     normalized = normalize_alpha_message(message)
     blocks: list[dict[str, str | int]] = []
-    for index in range(0, len(normalized), ALPHA_BLOCK_SIZE):
-        block = normalized[index : index + ALPHA_BLOCK_SIZE]
+    alpha_block_size = max_alpha_block_size(public_key.p)
+    for index in range(0, len(normalized), alpha_block_size):
+        block = normalized[index : index + alpha_block_size]
         m = alpha_block_to_int(block)
         k = random_coprime(public_key.p - 1)
         a = pow(public_key.g, k, public_key.p)
@@ -135,7 +166,7 @@ def encrypt_alpha_message(message: str, public_key: PublicKey) -> dict[str, Any]
         "algorithm": "ElGamal-2048",
         "encoding": "alphabet-base26",
         "alphabet": ALPHABET,
-        "char_block_size": ALPHA_BLOCK_SIZE,
+        "char_block_size": alpha_block_size,
         "blocks": blocks,
     }
 
@@ -181,6 +212,61 @@ def decrypt_bytes(ciphertext: dict[str, Any], private_key: PrivateKey) -> bytes:
     return bytes(plaintext)
 
 
+def stream_cipher_sha256_ctr(key: bytes, data: bytes) -> bytes:
+    out = bytearray()
+    chunk_size = 32
+    for i in range(0, len(data), chunk_size):
+        counter_bytes = struct.pack(">Q", i // chunk_size)
+        keystream = sha256(key + counter_bytes).digest()
+        chunk = data[i : i + chunk_size]
+        for j in range(len(chunk)):
+            out.append(chunk[j] ^ keystream[j])
+    return bytes(out)
+
+
+def encrypt_file_hybrid(
+    file_bytes: bytes,
+    public_key: PublicKey,
+    original_filename: str | None = None,
+    mime_type: str | None = None,
+) -> dict[str, Any]:
+    import os
+    sym_key = os.urandom(32)
+    ciphertext_bytes = stream_cipher_sha256_ctr(sym_key, file_bytes)
+    
+    sym_key_int = int.from_bytes(sym_key, "big")
+    k = random_coprime(public_key.p - 1)
+    a = pow(public_key.g, k, public_key.p)
+    b = (sym_key_int * pow(public_key.y, k, public_key.p)) % public_key.p
+    
+    payload = {
+        "algorithm": "Hybrid-ElGamal-SHA256CTR",
+        "encoding": "hybrid-hex",
+        "encrypted_symmetric_key": {
+            "a": format(a, "x"),
+            "b": format(b, "x")
+        },
+        "ciphertext_base64": base64.b64encode(ciphertext_bytes).decode("ascii")
+    }
+    if original_filename:
+        payload["original_filename"] = Path(original_filename).name
+    if mime_type:
+        payload["mime_type"] = mime_type
+    return payload
+
+
+def decrypt_file_hybrid(ciphertext: dict[str, Any], private_key: PrivateKey) -> bytes:
+    enc_sym = ciphertext["encrypted_symmetric_key"]
+    a = int(enc_sym["a"], 16)
+    b = int(enc_sym["b"], 16)
+    
+    shared_secret = pow(a, private_key.x, private_key.p)
+    sym_key_int = (b * mod_inverse(shared_secret, private_key.p)) % private_key.p
+    sym_key = sym_key_int.to_bytes(32, "big")
+    
+    ciphertext_bytes = base64.b64decode(ciphertext["ciphertext_base64"])
+    return stream_cipher_sha256_ctr(sym_key, ciphertext_bytes)
+
 def sign_bytes(message: bytes, private_key: PrivateKey) -> dict[str, Any]:
     h = int.from_bytes(sha256(message).digest(), "big") % (private_key.p - 1)
     k = random_coprime(private_key.p - 1)
@@ -198,6 +284,8 @@ def verify_signature(message: bytes, signature: dict[str, Any], public_key: Publ
     r = int(signature["r"], 16)
     s = int(signature["s"], 16)
     if not 0 < r < public_key.p:
+        return False
+    if not 0 <= s < public_key.p - 1:
         return False
     h = int.from_bytes(sha256(message).digest(), "big") % (public_key.p - 1)
     left = pow(public_key.g, h, public_key.p)
@@ -265,18 +353,29 @@ def write_text_output(text: str, output_file: Path | None) -> None:
     print(text)
 
 
-def save_keypair(output_prefix: Path) -> tuple[Path, Path]:
-    public_key, private_key = generate_keypair()
+def save_keypair(output_prefix: Path, prime_mode: int = 2) -> tuple[Path, Path]:
+    public_key, private_key = generate_keypair(prime_mode)
     public_path = output_prefix.with_suffix(".public.json")
     private_path = output_prefix.with_suffix(".private.json")
-    dump_json(public_path, asdict(public_key))
-    dump_json(private_path, asdict(private_key))
+    
+    pub_dict = asdict(public_key)
+    priv_dict = asdict(private_key)
+    
+    # Remove null certificates to save space
+    if pub_dict.get("prime_certificate") is None:
+        del pub_dict["prime_certificate"]
+    if priv_dict.get("prime_certificate") is None:
+        del priv_dict["prime_certificate"]
+        
+    dump_json(public_path, pub_dict)
+    dump_json(private_path, priv_dict)
     return public_path, private_path
 
 
 def handle_genkey(args: argparse.Namespace) -> None:
     output_prefix = Path(args.output)
-    public_path, private_path = save_keypair(output_prefix)
+    prime_mode = getattr(args, "prime_mode", 2)
+    public_path, private_path = save_keypair(output_prefix, prime_mode)
     print(f"Da tao khoa cong khai: {public_path}")
     print(f"Da tao khoa bi mat: {private_path}")
 
@@ -328,24 +427,29 @@ def launch_gui() -> None:
     root.title("Elsign-2048")
     root.geometry("980x720")
     root.minsize(900, 640)
-    root.configure(bg="#f3efe7")
-
+    root.configure(bg="#f4f6f8")
+    
     style = ttk.Style(root)
     if "clam" in style.theme_names():
         style.theme_use("clam")
-    style.configure("App.TFrame", background="#f3efe7")
-    style.configure("Card.TLabelframe", background="#f8f5ef", borderwidth=1)
-    style.configure("Card.TLabelframe.Label", background="#f8f5ef", foreground="#3f3024")
-    style.configure("Title.TLabel", background="#f3efe7", foreground="#2f241b", font=("Georgia", 18, "bold"))
-    style.configure("Hint.TLabel", background="#f3efe7", foreground="#6d5f53", font=("Segoe UI", 10))
-    style.configure("Action.TButton", font=("Segoe UI", 10, "bold"))
+    style.configure("App.TFrame", background="#f4f6f8")
+    style.configure("Card.TLabelframe", background="#ffffff", borderwidth=0, relief="flat")
+    style.configure("Card.TLabelframe.Label", background="#ffffff", foreground="#212b36", font=("Segoe UI", 13, "bold"))
+    style.configure("Title.TLabel", background="#f4f6f8", foreground="#212b36", font=("Segoe UI", 24, "bold"))
+    style.configure("Hint.TLabel", background="#f4f6f8", foreground="#637381", font=("Segoe UI", 11))
+    style.configure("Action.TButton", font=("Segoe UI", 11, "bold"), padding=8)
+    style.configure("TLabel", background="#ffffff", font=("Segoe UI", 10))
+    style.configure("TRadiobutton", background="#ffffff", font=("Segoe UI", 10))
 
     status_var = tk.StringVar(value="San sang.")
     key_prefix_var = tk.StringVar(value="receiver_key")
+    prime_mode_var = tk.IntVar(value=2)
     public_key_var = tk.StringVar(value=str(base_dir / "receiver_key.public.json"))
     private_key_var = tk.StringVar(value=str(base_dir / "receiver_key.private.json"))
     cipher_path_var = tk.StringVar(value=str(base_dir / "cipher.json"))
     normalized_var = tk.StringVar(value="")
+    sender_mode_var = tk.IntVar(value=1)
+    sender_file_entry_var = tk.StringVar()
 
     def set_status(message: str) -> None:
         status_var.set(message)
@@ -380,56 +484,135 @@ def launch_gui() -> None:
             normalized_var.set("")
 
     def generate_receiver_keys() -> None:
-        try:
-            prefix_text = key_prefix_var.get().strip() or "receiver_key"
-            output_prefix = resolve_path(prefix_text, base_dir)
-            public_path, private_path = save_keypair(output_prefix)
+        prefix_text = key_prefix_var.get().strip() or "receiver_key"
+        output_prefix = resolve_path(prefix_text, base_dir)
+        mode = prime_mode_var.get()
+        
+        def task() -> None:
+            try:
+                public_path, private_path = save_keypair(output_prefix, prime_mode=mode)
+                root.after(0, lambda: on_keys_generated(public_path, private_path))
+            except Exception as exc:
+                root.after(0, lambda e=exc: messagebox.showerror("Loi tao khoa", str(e)))
+                root.after(0, lambda: set_status("Lỗi khi tạo khóa."))
+                root.after(0, progress_bar.stop)
+                root.after(0, progress_bar.grid_remove)
+                
+        def on_keys_generated(public_path: Path, private_path: Path) -> None:
             public_key_var.set(str(public_path))
             private_key_var.set(str(private_path))
             sender_public_entry_var.set(str(public_path))
             receiver_private_entry_var.set(str(private_path))
+            progress_bar.stop()
+            progress_bar.grid_remove()
             set_status(f"Da tao khoa cho ben nhan tai {public_path.name} va {private_path.name}.")
             messagebox.showinfo("Tao khoa", "Da tao khoa cho ben nhan thanh cong.")
-        except Exception as exc:
-            messagebox.showerror("Loi tao khoa", str(exc))
+            
+        set_status("Đang xử lý sinh khóa... Vui lòng đợi.")
+        progress_bar.grid()
+        progress_bar.start(15)
+        import threading
+        threading.Thread(target=task, daemon=True).start()
 
     def encrypt_for_receiver() -> None:
-        try:
-            public_key_path = resolve_path(sender_public_entry_var.get().strip(), base_dir)
-            output_path = resolve_path(sender_cipher_entry_var.get().strip() or "cipher.json", base_dir)
-            message = sender_input.get("1.0", "end-1c")
-            public_key = load_public_key(public_key_path)
-            ciphertext = encrypt_alpha_message(message, public_key)
-            dump_json(output_path, ciphertext)
-            normalized = normalize_alpha_message(message)
+        def task():
+            try:
+                public_key_path = resolve_path(sender_public_entry_var.get().strip(), base_dir)
+                output_path = resolve_path(sender_cipher_entry_var.get().strip() or "cipher.json", base_dir)
+                public_key = load_public_key(public_key_path)
+                
+                if sender_mode_var.get() == 1:
+                    message = sender_input.get("1.0", "end-1c")
+                    ciphertext = encrypt_alpha_message(message, public_key)
+                    normalized = normalize_alpha_message(message)
+                else:
+                    file_path = resolve_path(sender_file_entry_var.get().strip(), base_dir)
+                    file_bytes = file_path.read_bytes()
+                    ciphertext = encrypt_file_hybrid(file_bytes, public_key, original_filename=file_path.name)
+                    normalized = f"[File {file_path.name}]"
+                    
+                dump_json(output_path, ciphertext)
+                root.after(0, lambda n=normalized, o=output_path: on_encrypted(n, o))
+            except Exception as exc:
+                root.after(0, lambda e=exc: messagebox.showerror("Loi ma hoa", str(e)))
+                root.after(0, lambda: set_status("Lỗi khi mã hóa."))
+                root.after(0, progress_bar.stop)
+                root.after(0, progress_bar.grid_remove)
+                
+        def on_encrypted(normalized, output_path):
             normalized_var.set(normalized)
             receiver_cipher_entry_var.set(str(output_path))
             receiver_output.configure(state="normal")
             receiver_output.delete("1.0", "end")
             receiver_output.insert("1.0", "Ban ma da duoc tao. Ben nhan co the mo file nay de giai ma.")
             receiver_output.configure(state="disabled")
+            progress_bar.stop()
+            progress_bar.grid_remove()
             set_status(f"Ben gui da ma hoa va luu ban ma tai {output_path.name}.")
             messagebox.showinfo("Ma hoa", f"Da ma hoa thong diep.\nDang chuan hoa: {normalized}")
-        except Exception as exc:
-            messagebox.showerror("Loi ma hoa", str(exc))
+            
+        set_status("Đang mã hóa thông điệp...")
+        progress_bar.grid()
+        progress_bar.start(15)
+        import threading
+        threading.Thread(target=task, daemon=True).start()
 
     def decrypt_for_receiver() -> None:
-        try:
-            private_key_path = resolve_path(receiver_private_entry_var.get().strip(), base_dir)
-            cipher_path = resolve_path(receiver_cipher_entry_var.get().strip(), base_dir)
-            private_key = load_private_key(private_key_path)
-            ciphertext = load_json(cipher_path)
-            if ciphertext.get("encoding") == "alphabet-base26":
-                plaintext = decrypt_alpha_message(ciphertext, private_key)
+        def task():
+            try:
+                private_key_path = resolve_path(receiver_private_entry_var.get().strip(), base_dir)
+                cipher_path = resolve_path(receiver_cipher_entry_var.get().strip(), base_dir)
+                private_key = load_private_key(private_key_path)
+                ciphertext = load_json(cipher_path)
+                
+                if ciphertext.get("encoding") == "alphabet-base26":
+                    plaintext = decrypt_alpha_message(ciphertext, private_key)
+                    is_file = False
+                elif ciphertext.get("encoding") == "hybrid-hex":
+                    plaintext = decrypt_file_hybrid(ciphertext, private_key)
+                    is_file = True
+                else:
+                    plaintext = decrypt_bytes(ciphertext, private_key)
+                    is_file = True
+                
+                root.after(0, lambda p=plaintext, c=cipher_path, f=is_file: on_decrypted(p, c, f))
+            except Exception as exc:
+                root.after(0, lambda e=exc: messagebox.showerror("Loi giai ma", str(e)))
+                root.after(0, lambda: set_status("Lỗi khi giải mã."))
+                root.after(0, progress_bar.stop)
+                root.after(0, progress_bar.grid_remove)
+                
+        def on_decrypted(plaintext, cipher_path, is_file):
+            if is_file:
+                save_path = filedialog.asksaveasfilename(
+                    title="Luu file giai ma",
+                    initialdir=str(base_dir),
+                    defaultextension=".*",
+                    filetypes=[("All files", "*.*")]
+                )
+                if save_path:
+                    Path(save_path).write_bytes(plaintext)
+                    msg = f"Đã lưu file giải mã tại: {save_path}"
+                else:
+                    msg = "Đã hủy lưu file."
+                receiver_output.configure(state="normal")
+                receiver_output.delete("1.0", "end")
+                receiver_output.insert("1.0", msg)
+                receiver_output.configure(state="disabled")
             else:
-                plaintext = decrypt_bytes(ciphertext, private_key).decode("utf-8")
-            receiver_output.configure(state="normal")
-            receiver_output.delete("1.0", "end")
-            receiver_output.insert("1.0", plaintext)
-            receiver_output.configure(state="disabled")
+                receiver_output.configure(state="normal")
+                receiver_output.delete("1.0", "end")
+                receiver_output.insert("1.0", plaintext)
+                receiver_output.configure(state="disabled")
+            progress_bar.stop()
+            progress_bar.grid_remove()
             set_status(f"Ben nhan da giai ma thanh cong tu {cipher_path.name}.")
-        except Exception as exc:
-            messagebox.showerror("Loi giai ma", str(exc))
+            
+        set_status("Đang giải mã thông điệp...")
+        progress_bar.grid()
+        progress_bar.start(15)
+        import threading
+        threading.Thread(target=task, daemon=True).start()
 
     header = ttk.Frame(root, style="App.TFrame", padding=(22, 18, 22, 8))
     header.pack(fill="x")
@@ -445,20 +628,30 @@ def launch_gui() -> None:
 
     sender_tab = ttk.Frame(notebook, style="App.TFrame", padding=18)
     receiver_tab = ttk.Frame(notebook, style="App.TFrame", padding=18)
+    signature_tab = ttk.Frame(notebook, style="App.TFrame", padding=18)
     help_tab = ttk.Frame(notebook, style="App.TFrame", padding=18)
     notebook.add(receiver_tab, text="Ben Nhan")
     notebook.add(sender_tab, text="Ben Gui")
+    notebook.add(signature_tab, text="Chu Ky So")
     notebook.add(help_tab, text="Huong Dan")
 
     key_card = ttk.LabelFrame(receiver_tab, text="1. Tao khoa cho ben nhan", style="Card.TLabelframe", padding=16)
     key_card.pack(fill="x", pady=(0, 14))
-    ttk.Label(key_card, text="Tien to ten khoa:").grid(row=0, column=0, sticky="w")
-    ttk.Entry(key_card, textvariable=key_prefix_var, width=42).grid(row=0, column=1, sticky="ew", padx=(10, 10))
-    ttk.Button(key_card, text="Tao khoa", style="Action.TButton", command=generate_receiver_keys).grid(row=0, column=2, sticky="ew")
-    ttk.Label(key_card, text="Khoa cong khai:").grid(row=1, column=0, sticky="w", pady=(12, 0))
-    ttk.Entry(key_card, textvariable=public_key_var).grid(row=1, column=1, columnspan=2, sticky="ew", padx=(10, 0), pady=(12, 0))
-    ttk.Label(key_card, text="Khoa bi mat:").grid(row=2, column=0, sticky="w", pady=(10, 0))
-    ttk.Entry(key_card, textvariable=private_key_var).grid(row=2, column=1, columnspan=2, sticky="ew", padx=(10, 0), pady=(10, 0))
+    
+    ttk.Label(key_card, text="Che do sinh Prime:", background="#ffffff").grid(row=0, column=0, sticky="w", pady=(0, 10))
+    mode_frame = ttk.Frame(key_card, style="Card.TLabelframe")
+    mode_frame.grid(row=0, column=1, columnspan=2, sticky="w", pady=(0, 10))
+    ttk.Radiobutton(mode_frame, text="1. Nhanh (Xac suat)", variable=prime_mode_var, value=1).pack(side="left", padx=(0, 10))
+    ttk.Radiobutton(mode_frame, text="2. An toan (Tu Pool)", variable=prime_mode_var, value=2).pack(side="left", padx=(0, 10))
+    ttk.Radiobutton(mode_frame, text="3. Tuy chinh (Co chung chi)", variable=prime_mode_var, value=3).pack(side="left")
+    
+    ttk.Label(key_card, text="Tien to ten khoa:").grid(row=1, column=0, sticky="w")
+    ttk.Entry(key_card, textvariable=key_prefix_var, width=42).grid(row=1, column=1, sticky="ew", padx=(10, 10))
+    ttk.Button(key_card, text="Tao khoa", style="Action.TButton", command=generate_receiver_keys).grid(row=1, column=2, sticky="ew")
+    ttk.Label(key_card, text="Khoa cong khai:").grid(row=2, column=0, sticky="w", pady=(12, 0))
+    ttk.Entry(key_card, textvariable=public_key_var).grid(row=2, column=1, columnspan=2, sticky="ew", padx=(10, 0), pady=(12, 0))
+    ttk.Label(key_card, text="Khoa bi mat:").grid(row=3, column=0, sticky="w", pady=(10, 0))
+    ttk.Entry(key_card, textvariable=private_key_var).grid(row=3, column=1, columnspan=2, sticky="ew", padx=(10, 0), pady=(10, 0))
     key_card.columnconfigure(1, weight=1)
 
     decrypt_card = ttk.LabelFrame(receiver_tab, text="2. Giai ma cho ben nhan", style="Card.TLabelframe", padding=16)
@@ -507,34 +700,136 @@ def launch_gui() -> None:
         text="Mo khoa",
         command=lambda: choose_open_file(sender_public_entry_var, [("JSON", "*.json"), ("All files", "*.*")]),
     ).grid(row=0, column=2, sticky="ew")
-    ttk.Label(sender_card, text="Thong diep goc:").grid(row=1, column=0, sticky="nw", pady=(12, 0))
-    sender_input = scrolledtext.ScrolledText(
-        sender_card,
-        height=12,
-        wrap="word",
-        font=("Consolas", 11),
-        bg="#fffdf8",
-        fg="#2d241b",
-        relief="flat",
-    )
-    sender_input.grid(row=1, column=1, columnspan=2, sticky="nsew", pady=(12, 0))
+
+    ttk.Label(sender_card, text="Che do ma hoa:", background="#ffffff").grid(row=1, column=0, sticky="w", pady=(10, 5))
+    s_mode_frame = ttk.Frame(sender_card, style="Card.TLabelframe")
+    s_mode_frame.grid(row=1, column=1, columnspan=2, sticky="w", pady=(10, 5))
+    ttk.Radiobutton(s_mode_frame, text="1. Van ban (A-Z)", variable=sender_mode_var, value=1, command=lambda: toggle_sender_mode()).pack(side="left", padx=(0, 10))
+    ttk.Radiobutton(s_mode_frame, text="2. File (Anh, PDF...)", variable=sender_mode_var, value=2, command=lambda: toggle_sender_mode()).pack(side="left")
+
+    input_container = ttk.Frame(sender_card, style="Card.TLabelframe")
+    input_container.grid(row=2, column=0, columnspan=3, sticky="nsew", pady=(5, 10))
+    input_container.columnconfigure(1, weight=1)
+    
+    text_frame = ttk.Frame(input_container, style="Card.TLabelframe")
+    text_frame.columnconfigure(1, weight=1)
+    text_frame.rowconfigure(0, weight=1)
+    ttk.Label(text_frame, text="Thong diep goc:").grid(row=0, column=0, sticky="nw", pady=(0, 0))
+    sender_input = scrolledtext.ScrolledText(text_frame, height=8, wrap="word", font=("Consolas", 11), bg="#f9fafb", relief="flat")
+    sender_input.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
     sender_input.bind("<KeyRelease>", refresh_normalized_preview)
-    ttk.Label(sender_card, text="Thong diep sau chuan hoa A-Z:").grid(row=2, column=0, sticky="w", pady=(12, 0))
-    ttk.Entry(sender_card, textvariable=normalized_var, state="readonly").grid(
-        row=2, column=1, columnspan=2, sticky="ew", padx=(10, 0), pady=(12, 0)
-    )
-    ttk.Label(sender_card, text="File ban ma dau ra:").grid(row=3, column=0, sticky="w", pady=(12, 0))
-    ttk.Entry(sender_card, textvariable=sender_cipher_entry_var).grid(row=3, column=1, sticky="ew", padx=(10, 10), pady=(12, 0))
+    ttk.Label(text_frame, text="Sau chuan hoa A-Z:").grid(row=1, column=0, sticky="w", pady=(10, 0))
+    ttk.Entry(text_frame, textvariable=normalized_var, state="readonly").grid(row=1, column=1, sticky="ew", padx=(10, 0), pady=(10, 0))
+    
+    file_frame = ttk.Frame(input_container, style="Card.TLabelframe")
+    file_frame.columnconfigure(1, weight=1)
+    ttk.Label(file_frame, text="Chon file goc:").grid(row=0, column=0, sticky="w")
+    ttk.Entry(file_frame, textvariable=sender_file_entry_var).grid(row=0, column=1, sticky="ew", padx=(10, 10))
+    ttk.Button(file_frame, text="Chon File...", command=lambda: choose_open_file(sender_file_entry_var, [("All files", "*.*")])).grid(row=0, column=2, sticky="ew")
+
+    def toggle_sender_mode():
+        if sender_mode_var.get() == 1:
+            file_frame.grid_remove()
+            text_frame.grid(row=0, column=0, sticky="nsew")
+        else:
+            text_frame.grid_remove()
+            file_frame.grid(row=0, column=0, sticky="nsew")
+            
+    toggle_sender_mode()
+
+    ttk.Label(sender_card, text="File ban ma dau ra:").grid(row=3, column=0, sticky="w", pady=(10, 0))
+    ttk.Entry(sender_card, textvariable=sender_cipher_entry_var).grid(row=3, column=1, sticky="ew", padx=(10, 10), pady=(10, 0))
     ttk.Button(
         sender_card,
         text="Luu tai",
         command=lambda: choose_save_file(sender_cipher_entry_var, ".json", [("JSON", "*.json"), ("All files", "*.*")]),
-    ).grid(row=3, column=2, sticky="ew", pady=(12, 0))
+    ).grid(row=3, column=2, sticky="ew", pady=(10, 0))
     ttk.Button(sender_card, text="Ma hoa", style="Action.TButton", command=encrypt_for_receiver).grid(
         row=4, column=0, columnspan=3, sticky="ew", pady=(16, 0)
     )
     sender_card.columnconfigure(1, weight=1)
-    sender_card.rowconfigure(1, weight=1)
+    sender_card.rowconfigure(2, weight=1)
+
+    # === THÊM TAB CHỮ KÝ SỐ ===
+    sig_key_var = tk.StringVar(value=str(base_dir / "sender_key.private.json"))
+    sig_file_var = tk.StringVar()
+    sig_out_var = tk.StringVar(value=str(base_dir / "signature.json"))
+    ver_key_var = tk.StringVar(value=str(base_dir / "sender_key.public.json"))
+    ver_file_var = tk.StringVar()
+    ver_sig_var = tk.StringVar(value=str(base_dir / "signature.json"))
+    
+    def sign_action():
+        def task():
+            try:
+                private_key = load_private_key(resolve_path(sig_key_var.get(), base_dir))
+                msg_text = sig_msg_input.get("1.0", "end-1c")
+                if sig_mode_var.get() == 1:
+                    payload = msg_text.encode("utf-8")
+                else:
+                    payload = resolve_path(sig_file_var.get(), base_dir).read_bytes()
+                signature = sign_bytes(payload, private_key)
+                out_path = resolve_path(sig_out_var.get() or "signature.json", base_dir)
+                dump_json(out_path, signature)
+                root.after(0, lambda: messagebox.showinfo("Thành công", f"Đã ký và lưu chữ ký vào {out_path.name}"))
+            except Exception as e:
+                root.after(0, lambda e=e: messagebox.showerror("Lỗi", str(e)))
+        import threading
+        threading.Thread(target=task, daemon=True).start()
+
+    def verify_action():
+        def task():
+            try:
+                public_key = load_public_key(resolve_path(ver_key_var.get(), base_dir))
+                signature = load_json(resolve_path(ver_sig_var.get(), base_dir))
+                msg_text = ver_msg_input.get("1.0", "end-1c")
+                if ver_mode_var.get() == 1:
+                    payload = msg_text.encode("utf-8")
+                else:
+                    payload = resolve_path(ver_file_var.get(), base_dir).read_bytes()
+                is_valid = verify_signature(payload, signature, public_key)
+                if is_valid:
+                    root.after(0, lambda: messagebox.showinfo("Kết quả", "HỢP LỆ: Chữ ký đúng! File nguyên vẹn."))
+                else:
+                    root.after(0, lambda: messagebox.showerror("Kết quả", "KHÔNG HỢP LỆ: Chữ ký sai! File bị sửa hoặc sai người gửi."))
+            except Exception as e:
+                root.after(0, lambda e=e: messagebox.showerror("Lỗi", str(e)))
+        import threading
+        threading.Thread(target=task, daemon=True).start()
+
+    sig_card = ttk.LabelFrame(signature_tab, text="1. Ký Số (Bên Gửi ký bằng Private Key)", style="Card.TLabelframe", padding=16)
+    sig_card.pack(fill="x", pady=(0, 10))
+    ttk.Label(sig_card, text="Private Key:").grid(row=0, column=0, sticky="w")
+    ttk.Entry(sig_card, textvariable=sig_key_var).grid(row=0, column=1, sticky="ew", padx=10)
+    ttk.Button(sig_card, text="Mở...", command=lambda: choose_open_file(sig_key_var, [("JSON", "*.json")])).grid(row=0, column=2)
+    sig_mode_var = tk.IntVar(value=1)
+    ttk.Radiobutton(sig_card, text="Ký Văn bản", variable=sig_mode_var, value=1).grid(row=1, column=0, sticky="w", pady=5)
+    ttk.Radiobutton(sig_card, text="Ký File", variable=sig_mode_var, value=2).grid(row=1, column=1, sticky="w", pady=5)
+    sig_msg_input = scrolledtext.ScrolledText(sig_card, height=4)
+    sig_msg_input.grid(row=2, column=0, columnspan=3, sticky="ew", pady=5)
+    ttk.Entry(sig_card, textvariable=sig_file_var).grid(row=3, column=0, columnspan=2, sticky="ew", padx=(0,10))
+    ttk.Button(sig_card, text="Chọn File...", command=lambda: choose_open_file(sig_file_var, [("All files", "*.*")])).grid(row=3, column=2)
+    ttk.Label(sig_card, text="Lưu Chữ ký (.json):").grid(row=4, column=0, sticky="w", pady=5)
+    ttk.Entry(sig_card, textvariable=sig_out_var).grid(row=4, column=1, sticky="ew", padx=10, pady=5)
+    ttk.Button(sig_card, text="Tạo Chữ Ký", style="Action.TButton", command=sign_action).grid(row=4, column=2, pady=5)
+    sig_card.columnconfigure(1, weight=1)
+
+    ver_card = ttk.LabelFrame(signature_tab, text="2. Kiểm tra (Bên Nhận dùng Public Key của người gửi)", style="Card.TLabelframe", padding=16)
+    ver_card.pack(fill="x", pady=0)
+    ttk.Label(ver_card, text="Public Key:").grid(row=0, column=0, sticky="w")
+    ttk.Entry(ver_card, textvariable=ver_key_var).grid(row=0, column=1, sticky="ew", padx=10)
+    ttk.Button(ver_card, text="Mở...", command=lambda: choose_open_file(ver_key_var, [("JSON", "*.json")])).grid(row=0, column=2)
+    ver_mode_var = tk.IntVar(value=1)
+    ttk.Radiobutton(ver_card, text="Văn bản", variable=ver_mode_var, value=1).grid(row=1, column=0, sticky="w", pady=5)
+    ttk.Radiobutton(ver_card, text="File", variable=ver_mode_var, value=2).grid(row=1, column=1, sticky="w", pady=5)
+    ver_msg_input = scrolledtext.ScrolledText(ver_card, height=4)
+    ver_msg_input.grid(row=2, column=0, columnspan=3, sticky="ew", pady=5)
+    ttk.Entry(ver_card, textvariable=ver_file_var).grid(row=3, column=0, columnspan=2, sticky="ew", padx=(0,10))
+    ttk.Button(ver_card, text="Chọn File...", command=lambda: choose_open_file(ver_file_var, [("All files", "*.*")])).grid(row=3, column=2)
+    ttk.Label(ver_card, text="File Chữ ký (.json):").grid(row=4, column=0, sticky="w", pady=5)
+    ttk.Entry(ver_card, textvariable=ver_sig_var).grid(row=4, column=1, sticky="ew", padx=10, pady=5)
+    ttk.Button(ver_card, text="Mở...", command=lambda: choose_open_file(ver_sig_var, [("JSON", "*.json")])).grid(row=4, column=2, pady=5)
+    ttk.Button(ver_card, text="Kiểm tra", style="Action.TButton", command=verify_action).grid(row=5, column=0, columnspan=3, pady=5)
+    ver_card.columnconfigure(1, weight=1)
 
     guide_card = ttk.LabelFrame(help_tab, text="Quy trinh de xuat", style="Card.TLabelframe", padding=16)
     guide_card.pack(fill="both", expand=True)
@@ -563,8 +858,16 @@ def launch_gui() -> None:
     )
     guide_text.configure(state="disabled")
 
-    status_bar = ttk.Label(root, textvariable=status_var, anchor="w", style="Hint.TLabel")
-    status_bar.pack(fill="x", padx=20, pady=(0, 16))
+    status_frame = ttk.Frame(root, style="App.TFrame")
+    status_frame.pack(fill="x", side="bottom", padx=20, pady=(0, 16))
+    status_frame.columnconfigure(0, weight=1)
+    
+    status_bar = ttk.Label(status_frame, textvariable=status_var, anchor="w", style="Hint.TLabel")
+    status_bar.grid(row=0, column=0, sticky="ew")
+    
+    progress_bar = ttk.Progressbar(status_frame, mode="indeterminate", length=180)
+    progress_bar.grid(row=0, column=1, padx=(10, 0))
+    progress_bar.grid_remove()
 
     root.mainloop()
 
@@ -576,7 +879,8 @@ def handle_gui(_args: argparse.Namespace) -> None:
 def handle_web(args: argparse.Namespace) -> None:
     from web_app import run_server
 
-    url = f"http://{args.host}:{args.port}"
+    browser_host = "127.0.0.1" if args.host == "0.0.0.0" else args.host
+    url = f"http://{browser_host}:{args.port}"
     if getattr(args, "open_browser", True):
         webbrowser.open(url)
     run_server(host=args.host, port=args.port)
@@ -594,6 +898,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         default="elsign_2048",
         help="Tien to ten file output, mac dinh la elsign_2048.",
+    )
+    genkey.add_argument(
+        "--prime-mode",
+        type=int,
+        choices=[1, 2, 3],
+        default=2,
+        help="Che do sinh prime (1: Miller-Rabin, 2: Pool, 3: Provable).",
     )
     genkey.set_defaults(func=handle_genkey)
 
@@ -660,7 +971,8 @@ def interactive_menu() -> None:
     try:
         if choice == "1":
             prefix = input("Nhap tien to ten file khoa [elsign_2048]: ").strip() or "elsign_2048"
-            handle_genkey(argparse.Namespace(output=prefix))
+            mode = input("Nhap che do (1: Nhanh, 2: Pool an toan, 3: Tu sinh cham) [2]: ").strip() or "2"
+            handle_genkey(argparse.Namespace(output=prefix, prime_mode=int(mode)))
         elif choice == "2":
             key = input("Nhap file khoa cong khai cua ben nhan: ").strip()
             message = input("Nhap thong diep can ma hoa: ")
